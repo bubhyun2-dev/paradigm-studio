@@ -370,7 +370,7 @@ export default function Step11Summary() {
                     {ws.unpaidMemo && (
                       <tr>
                         <th style={TH}>미수납 안내 문구</th>
-                        <td style={TD} colSpan={3} style={{ ...TD, whiteSpace: 'pre-wrap' }}>{ws.unpaidMemo}</td>
+                        <td style={{ ...TD, whiteSpace: 'pre-wrap' }} colSpan={3}>{ws.unpaidMemo}</td>
                       </tr>
                     )}
                     {ws.unpaidLinkTitle && (
@@ -394,7 +394,7 @@ export default function Step11Summary() {
                 {ws.allowNoPrescriptionTicket && ws.noPrescriptionMemo && (
                   <tr>
                     <th style={TH}>미처방 안내 문구</th>
-                    <td style={TD} colSpan={3} style={{ ...TD, whiteSpace: 'pre-wrap' }}>{ws.noPrescriptionMemo}</td>
+                    <td style={{ ...TD, whiteSpace: 'pre-wrap' }} colSpan={3}>{ws.noPrescriptionMemo}</td>
                   </tr>
                 )}
               </tbody>
