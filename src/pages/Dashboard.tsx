@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../store/useStore';
 import type { ProjectStatus, Project } from '../types';
-import { createDemoProject, seedProducts, seedDealers, createSeedMasterTemplate } from '../data/seed';
+import { createDemoProject } from '../data/seed';
 import { parseEmbeddedProjectData, cloneProjectForImport } from '../utils/exportUtils';
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
@@ -56,8 +56,6 @@ export default function Dashboard() {
   const dealers = useStore((s) => s.dealers);
   const appSettings = useStore((s) => s.appSettings);
   const addProject = useStore((s) => s.addProject);
-  const addProduct = useStore((s) => s.addProduct);
-  const addDealer = useStore((s) => s.addDealer);
   const duplicateProject = useStore((s) => s.duplicateProject);
   const deleteProject = useStore((s) => s.deleteProject);
   const setCurrentProject = useStore((s) => s.setCurrentProject);
@@ -70,34 +68,6 @@ export default function Dashboard() {
   const [sortRecent, setSortRecent] = useState(true);
 
   // Seed data on first render if empty
-  useEffect(() => {
-    const state = useStore.getState();
-    if (state.templates.length === 0) {
-      const initialTemplate = createSeedMasterTemplate();
-      state.saveTemplateDraft(initialTemplate); // although draft action, it sets state. We can use directly or we wrote saveTemplateDraft to just add it
-      // Wait we made saveTemplateDraft overwrite or add. Since status is 'published', it will add as published.
-    }
-  }, []);
-
-  useEffect(() => {
-    const state = useStore.getState();
-    const publishedTemplates = state.templates.filter(t => t.status === 'published');
-    const master = publishedTemplates.length > 0
-      ? publishedTemplates.reduce((prev, current) => (prev.version > current.version) ? prev : current)
-      : undefined;
-
-    if (state.projects.length === 0) {
-      const demo = createDemoProject(master);
-      addProject(demo);
-    }
-    if (state.products.length === 0) {
-      seedProducts.forEach((p) => addProduct(p));
-    }
-    if (state.dealers.length === 0) {
-      seedDealers.forEach((d) => addDealer(d));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useStore((s) => s.templates.length)]);
 
   // Derived data
   const regions = useMemo(

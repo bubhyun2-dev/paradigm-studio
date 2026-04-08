@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import type {
   User,
   Project,
@@ -9,7 +8,26 @@ import type {
   MasterTemplate,
   AppSettings,
 } from '../types';
+import {
+  fetchAppSettings,
+  saveAppSettings,
+  fetchDealers,
+  saveDealer,
+  deleteDealerDb,
+  fetchProducts,
+  saveProduct,
+  deleteProductDb,
+  fetchEducationLinks,
+  saveEducationLink,
+  deleteEducationLinkDb,
+  fetchTemplates,
+  saveTemplate,
+  watchProjects,
+  saveProject,
+  deleteProjectDb,
+} from '../lib/db';
 
+// ─── 기본 앱 설정 ──────────────────────────────────────────────────
 const DEFAULT_APP_SETTINGS: AppSettings = {
   appName: 'Paradigm Studio',
   companyName: 'AT Solutions',
@@ -25,8 +43,16 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   step11Notice: '',
 };
 
+// 실시간 리스너 언서브스크라이브 함수 (모듈 수준 보관)
+let unsubscribeProjects: (() => void) | null = null;
+
+// ─── 타입 ──────────────────────────────────────────────────────────
 interface AppState {
-  // State
+  // 로딩 상태
+  isLoading: boolean;
+  isInitialized: boolean;
+
+  // 데이터
   user: User | null;
   projects: Project[];
   products: Product[];
@@ -36,6 +62,10 @@ interface AppState {
   appSettings: AppSettings;
   currentProjectId: string | null;
   currentStep: number;
+
+  // 초기화
+  initializeApp: () => Promise<void>;
+  loadAllData: (dealerId?: string) => Promise<void>;
 
   // Auth
   setUser: (user: User | null) => void;
@@ -77,267 +107,372 @@ interface AppState {
   updateAppSettings: (partial: Partial<AppSettings>) => void;
 }
 
-const DEMO_USER: User = {
-  id: 'demo-sales-001',
-  name: '김영업',
-  email: 'demo@paradigm.co.kr',
-  role: 'admin', // changed to admin for easier debugging
-  dealerId: 'dealer-001',
-};
+// ─── Store ─────────────────────────────────────────────────────────
+export const useStore = create<AppState>()((set, get) => ({
+  isLoading: false,
+  isInitialized: false,
+  user: null,
+  projects: [],
+  products: [],
+  dealers: [],
+  educationLinks: [],
+  templates: [],
+  appSettings: DEFAULT_APP_SETTINGS,
+  currentProjectId: null,
+  currentStep: 0,
 
-const DEFAULT_INDIVIDUAL_TICKET = {
-  enabled: true,
-  headerTextKr: '',
-  headerTextEn: '',
-  noticeTextKr: '',
-  noticeTextEn: '',
-  pointColor: '#000000',
-};
+  // ── 앱 초기화: 로그인 전에 설정/대리점 로드 ──────────────────────
+  initializeApp: async () => {
+    set({ isLoading: true });
+    try {
+      const [settings, dealers] = await Promise.all([
+        fetchAppSettings(),
+        fetchDealers(),
+      ]);
 
-export const useStore = create<AppState>()(
-  persist(
-    (set, get) => ({
-      // Initial state
-      user: DEMO_USER,
+      const patch: Partial<AppState> = {
+        isInitialized: true,
+        isLoading: false,
+        dealers: dealers.length > 0 ? dealers : [],
+      };
+      if (settings) patch.appSettings = settings;
+      set(patch);
+
+      // 세션 복구: localStorage에 저장된 사용자가 있으면 자동 로그인
+      const saved = localStorage.getItem('paradigm-user');
+      if (saved) {
+        try {
+          const user: User = JSON.parse(saved);
+          set({ user });
+          await get().loadAllData(user.role === 'admin' ? undefined : user.dealerId);
+        } catch {
+          localStorage.removeItem('paradigm-user');
+        }
+      }
+    } catch (e) {
+      console.error('Firebase 초기화 오류:', e);
+      set({ isInitialized: true, isLoading: false });
+    }
+  },
+
+  // ── 로그인 후 전체 데이터 로드 + 실시간 리스너 ───────────────────
+  loadAllData: async (dealerId?: string) => {
+    set({ isLoading: true });
+    try {
+      const [products, templates, educationLinks] = await Promise.all([
+        fetchProducts(),
+        fetchTemplates(),
+        fetchEducationLinks(),
+      ]);
+      set({ products, templates, educationLinks, isLoading: false });
+
+      // 기존 리스너 정리 후 새 리스너 등록
+      if (unsubscribeProjects) {
+        unsubscribeProjects();
+        unsubscribeProjects = null;
+      }
+      unsubscribeProjects = watchProjects(dealerId, (projects) => {
+        useStore.setState({ projects });
+      });
+    } catch (e) {
+      console.error('데이터 로드 오류:', e);
+      set({ isLoading: false });
+    }
+  },
+
+  // ── Auth ─────────────────────────────────────────────────────────
+  setUser: (user) => set({ user }),
+
+  login: (email, pin) => {
+    const { appSettings, dealers } = get();
+
+    // 관리자 로그인
+    if (
+      (email.toLowerCase().startsWith('admin') || email === 'admin@paradigm.co.kr') &&
+      pin === appSettings.adminPin
+    ) {
+      const user: User = {
+        id: 'admin-001',
+        name: '관리자',
+        email,
+        role: 'admin',
+      };
+      set({ user });
+      localStorage.setItem('paradigm-user', JSON.stringify(user));
+      get().loadAllData(undefined);
+      return true;
+    }
+
+    // 대리점 로그인 (이메일 + 접근코드)
+    const dealer = dealers.find(
+      (d) => d.email === email && d.accessCode === pin && d.active !== false,
+    );
+    if (dealer) {
+      const user: User = {
+        id: dealer.id,
+        name: dealer.name,
+        email,
+        role: 'sales',
+        dealerId: dealer.id,
+      };
+      set({ user });
+      localStorage.setItem('paradigm-user', JSON.stringify(user));
+      get().loadAllData(dealer.id);
+      return true;
+    }
+
+    return false;
+  },
+
+  logout: () => {
+    if (unsubscribeProjects) {
+      unsubscribeProjects();
+      unsubscribeProjects = null;
+    }
+    localStorage.removeItem('paradigm-user');
+    set({
+      user: null,
       projects: [],
       products: [],
-      dealers: [],
-      educationLinks: [],
       templates: [],
-      appSettings: DEFAULT_APP_SETTINGS,
+      educationLinks: [],
       currentProjectId: null,
       currentStep: 0,
+    });
+  },
 
-      // Auth
-      setUser: (user) => set({ user }),
+  // ── Navigation ───────────────────────────────────────────────────
+  setCurrentProject: (id) => set({ currentProjectId: id, currentStep: 0 }),
+  setCurrentStep: (step) => set({ currentStep: step }),
 
-      login: (email: string, _pin: string) => {
-        if (_pin === '1234') {
-          const isAdmin = email === 'admin@paradigm.co.kr' || email.toLowerCase().startsWith('admin');
-          const mockUser: User = {
-            id: `user-${Date.now()}`,
-            name: email.split('@')[0],
-            email,
-            role: isAdmin ? 'admin' : 'sales',
-          };
-          set({ user: mockUser });
-          return true;
-        }
-        return false;
+  // ── Projects ─────────────────────────────────────────────────────
+  addProject: (project) => {
+    set((state) => ({ projects: [...state.projects, project] }));
+    saveProject(project);
+  },
+
+  updateProject: (id, partial) => {
+    let updated: Project | null = null;
+    set((state) => {
+      const projects = state.projects.map((p) => {
+        if (p.id !== id) return p;
+        const u = { ...p, ...partial, updatedAt: new Date().toISOString() };
+        updated = u;
+        return u;
+      });
+      return { projects };
+    });
+    if (updated) saveProject(updated);
+  },
+
+  deleteProject: (id) => {
+    set((state) => ({
+      projects: state.projects.filter((p) => p.id !== id),
+      currentProjectId: state.currentProjectId === id ? null : state.currentProjectId,
+    }));
+    deleteProjectDb(id);
+  },
+
+  duplicateProject: (id) => {
+    const source = get().projects.find((p) => p.id === id);
+    if (!source) return;
+    const now = new Date().toISOString();
+    const duplicate: Project = {
+      ...structuredClone(source),
+      id: `proj-${Date.now()}`,
+      hospitalProfile: {
+        ...source.hospitalProfile,
+        hospitalName: `${source.hospitalProfile.hospitalName} (복사본)`,
       },
+      status: 'draft',
+      createdAt: now,
+      updatedAt: now,
+    };
+    set((state) => ({ projects: [...state.projects, duplicate] }));
+    saveProject(duplicate);
+  },
 
-      logout: () =>
-        set({
-          user: null,
-          currentProjectId: null,
-          currentStep: 0,
-        }),
+  getCurrentProject: () => {
+    const { projects, currentProjectId } = get();
+    return projects.find((p) => p.id === currentProjectId);
+  },
 
-      // Navigation
-      setCurrentProject: (id) => set({ currentProjectId: id, currentStep: 0 }),
-      setCurrentStep: (step) => set({ currentStep: step }),
+  importProjects: (incoming) => {
+    let added = 0;
+    let updated = 0;
+    const toSave: Project[] = [];
 
-      // Projects
-      addProject: (project) =>
-        set((state) => ({ projects: [...state.projects, project] })),
-
-      updateProject: (id, partial) =>
-        set((state) => ({
-          projects: state.projects.map((p) =>
-            p.id === id ? { ...p, ...partial, updatedAt: new Date().toISOString() } : p
-          ),
-        })),
-
-      deleteProject: (id) =>
-        set((state) => ({
-          projects: state.projects.filter((p) => p.id !== id),
-          currentProjectId:
-            state.currentProjectId === id ? null : state.currentProjectId,
-        })),
-
-      duplicateProject: (id) =>
-        set((state) => {
-          const source = state.projects.find((p) => p.id === id);
-          if (!source) return state;
-          const now = new Date().toISOString();
-          const duplicate: Project = {
-            ...structuredClone(source),
-            id: `proj-${Date.now()}`,
-            hospitalProfile: {
-              ...source.hospitalProfile,
-              hospitalName: `${source.hospitalProfile.hospitalName} (복사본)`,
-            },
-            status: 'draft',
-            createdAt: now,
-            updatedAt: now,
+    set((state) => {
+      let projects = [...state.projects];
+      incoming.forEach((p) => {
+        const existingIdx = projects.findIndex((ep) => ep.id === p.id);
+        if (existingIdx >= 0) {
+          const existing = projects[existingIdx];
+          const merged: Project = {
+            ...p,
+            expectedInstallDate: existing.expectedInstallDate ?? p.expectedInstallDate,
+            actualInstallDate: existing.actualInstallDate ?? p.actualInstallDate,
+            status: existing.status === 'installed' ? existing.status : p.status,
           };
-          return { projects: [...state.projects, duplicate] };
-        }),
+          projects[existingIdx] = merged;
+          toSave.push(merged);
+          updated++;
+        } else {
+          projects.push(p);
+          toSave.push(p);
+          added++;
+        }
+      });
+      return { projects };
+    });
 
-      getCurrentProject: () => {
-        const { projects, currentProjectId } = get();
-        return projects.find((p) => p.id === currentProjectId);
-      },
+    toSave.forEach(saveProject);
+    return { added, updated };
+  },
 
-      importProjects: (incoming) => {
-        let added = 0;
-        let updated = 0;
-        set((state) => {
-          let projects = [...state.projects];
-          incoming.forEach((p) => {
-            const existingIdx = projects.findIndex((ep) => ep.id === p.id);
-            if (existingIdx >= 0) {
-              // 기존 프로젝트: 더 최신인 경우만 업데이트 (본사가 설정한 필드는 보존)
-              const existing = projects[existingIdx];
-              projects[existingIdx] = {
-                ...p,
-                // 본사가 입력한 설치일 정보는 기존 값 보존
-                expectedInstallDate: existing.expectedInstallDate ?? p.expectedInstallDate,
-                actualInstallDate: existing.actualInstallDate ?? p.actualInstallDate,
-                // 상태가 installed면 기존 유지
-                status: existing.status === 'installed' ? existing.status : p.status,
-              };
-              updated++;
-            } else {
-              projects.push(p);
-              added++;
-            }
-          });
-          return { projects };
-        });
-        return { added, updated };
-      },
+  // ── Products ─────────────────────────────────────────────────────
+  addProduct: (product) => {
+    set((state) => ({ products: [...state.products, product] }));
+    saveProduct(product);
+  },
 
-      // Products
-      addProduct: (product) =>
-        set((state) => ({ products: [...state.products, product] })),
+  updateProduct: (id, partial) => {
+    let updated: Product | null = null;
+    set((state) => {
+      const products = state.products.map((p) => {
+        if (p.id !== id) return p;
+        const u = { ...p, ...partial };
+        updated = u;
+        return u;
+      });
+      return { products };
+    });
+    if (updated) saveProduct(updated);
+  },
 
-      updateProduct: (id, partial) =>
-        set((state) => ({
-          products: state.products.map((p) =>
-            p.id === id ? { ...p, ...partial } : p
+  deleteProduct: (id) => {
+    set((state) => ({ products: state.products.filter((p) => p.id !== id) }));
+    deleteProductDb(id);
+  },
+
+  // ── Dealers ──────────────────────────────────────────────────────
+  addDealer: (dealer) => {
+    set((state) => ({ dealers: [...state.dealers, dealer] }));
+    saveDealer(dealer);
+  },
+
+  updateDealer: (id, partial) => {
+    let updated: Dealer | null = null;
+    set((state) => {
+      const dealers = state.dealers.map((d) => {
+        if (d.id !== id) return d;
+        const u = { ...d, ...partial };
+        updated = u;
+        return u;
+      });
+      return { dealers };
+    });
+    if (updated) saveDealer(updated);
+  },
+
+  deleteDealer: (id) => {
+    set((state) => ({ dealers: state.dealers.filter((d) => d.id !== id) }));
+    deleteDealerDb(id);
+  },
+
+  // ── Education Links ───────────────────────────────────────────────
+  addEducationLink: (link) => {
+    set((state) => ({ educationLinks: [...state.educationLinks, link] }));
+    saveEducationLink(link);
+  },
+
+  updateEducationLink: (id, partial) => {
+    let updated: EducationLink | null = null;
+    set((state) => {
+      const educationLinks = state.educationLinks.map((l) => {
+        if (l.id !== id) return l;
+        const u = { ...l, ...partial };
+        updated = u;
+        return u;
+      });
+      return { educationLinks };
+    });
+    if (updated) saveEducationLink(updated);
+  },
+
+  deleteEducationLink: (id) => {
+    set((state) => ({
+      educationLinks: state.educationLinks.filter((l) => l.id !== id),
+    }));
+    deleteEducationLinkDb(id);
+  },
+
+  // ── Templates ─────────────────────────────────────────────────────
+  saveTemplateDraft: (template) => {
+    let toSave: MasterTemplate | null = null;
+    set((state) => {
+      const exists = state.templates.find((t) => t.id === template.id);
+      if (exists) {
+        const updated = {
+          ...template,
+          updatedAt: new Date().toISOString(),
+        };
+        toSave = updated;
+        return {
+          templates: state.templates.map((t) =>
+            t.id === template.id ? updated : t,
           ),
-        })),
+        };
+      }
+      const newT = {
+        ...template,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      toSave = newT;
+      return { templates: [...state.templates, newT] };
+    });
+    if (toSave) saveTemplate(toSave);
+  },
 
-      deleteProduct: (id) =>
-        set((state) => ({
-          products: state.products.filter((p) => p.id !== id),
-        })),
-
-      // Dealers
-      addDealer: (dealer) =>
-        set((state) => ({ dealers: [...state.dealers, dealer] })),
-
-      updateDealer: (id, partial) =>
-        set((state) => ({
-          dealers: state.dealers.map((d) =>
-            d.id === id ? { ...d, ...partial } : d
-          ),
-        })),
-
-      deleteDealer: (id) =>
-        set((state) => ({
-          dealers: state.dealers.filter((d) => d.id !== id),
-        })),
-
-      // Education Links
-      addEducationLink: (link) =>
-        set((state) => ({ educationLinks: [...state.educationLinks, link] })),
-
-      updateEducationLink: (id, partial) =>
-        set((state) => ({
-          educationLinks: state.educationLinks.map((l) =>
-            l.id === id ? { ...l, ...partial } : l
-          ),
-        })),
-
-      deleteEducationLink: (id) =>
-        set((state) => ({
-          educationLinks: state.educationLinks.filter((l) => l.id !== id),
-        })),
-
-      // Templates
-      saveTemplateDraft: (template) =>
-        set((state) => {
-          const exists = state.templates.find((t) => t.id === template.id);
-          if (exists) {
-            return {
-              templates: state.templates.map((t) =>
-                t.id === template.id ? { ...t, ...template, updatedAt: new Date().toISOString() } : t
-              ),
-            };
-          }
-          return {
-            templates: [...state.templates, { ...template, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }],
+  publishMasterTemplate: (id, authorName) => {
+    set((state) => {
+      const target = state.templates.find((t) => t.id === id);
+      if (!target) return state;
+      const published = state.templates.filter((t) => t.status === 'published');
+      const maxVersion = published.reduce((max, t) => Math.max(max, t.version), 0);
+      const newVersion = maxVersion + 1;
+      const templates = state.templates.map((t) => {
+        if (t.status === 'published') {
+          const archived = { ...t, status: 'archived' as const, updatedAt: new Date().toISOString() };
+          saveTemplate(archived);
+          return archived;
+        }
+        if (t.id === id) {
+          const pub = {
+            ...t,
+            status: 'published' as const,
+            version: newVersion,
+            author: authorName,
+            updatedAt: new Date().toISOString(),
           };
-        }),
-
-      publishMasterTemplate: (id, authorName) =>
-        set((state) => {
-          const target = state.templates.find((t) => t.id === id);
-          if (!target) return state;
-
-          // Find current highest version
-          const published = state.templates.filter((t) => t.status === 'published');
-          const maxVersion = published.reduce((max, t) => Math.max(max, t.version), 0);
-          const newVersion = maxVersion + 1;
-
-          return {
-            templates: state.templates.map((t) => {
-              // Archive existing published
-              if (t.status === 'published') return { ...t, status: 'archived', updatedAt: new Date().toISOString() };
-              // Publish target
-              if (t.id === id) return { ...t, status: 'published', version: newVersion, author: authorName, updatedAt: new Date().toISOString() };
-              return t;
-            }),
-          };
-        }),
-
-      updateAppSettings: (partial) =>
-        set((state) => ({
-          appSettings: { ...state.appSettings, ...partial },
-        })),
-    }),
-    {
-      name: 'paradigm-studio-v2',
-      migrate: (persistedState: any, version: number) => {
-        let state = persistedState as any;
-        if (version < 2) {
-          console.warn('Migration v2: resetting projects/templates.');
-          state = { ...state, projects: [], templates: [], checklistTemplates: undefined };
+          saveTemplate(pub);
+          return pub;
         }
-        if (version < 3) {
-          // Restore admin role for demo and admin accounts without losing project data
-          if (state.user && (
-            state.user.email === 'demo@paradigm.co.kr' ||
-            state.user.email?.toLowerCase().startsWith('admin')
-          )) {
-            state = { ...state, user: { ...state.user, role: 'admin' } };
-          }
-        }
-        if (version < 4) {
-          // Add appSettings default if missing
-          if (!state.appSettings) {
-            state = { ...state, appSettings: DEFAULT_APP_SETTINGS };
-          }
-        }
-        return state;
-      },
-      version: 4,
-    }
-  )
-);
+        return t;
+      });
+      return { templates };
+    });
+  },
 
-// Always correct admin role after hydration — runs after localStorage sync completes.
-// This catches cases where the persist version migration didn't fire (e.g. stale cache).
-setTimeout(() => {
-  const { user } = useStore.getState();
-  if (!user) return;
-  const email = user.email ?? '';
-  if (
-    (email === 'demo@paradigm.co.kr' || email.toLowerCase().startsWith('admin')) &&
-    user.role !== 'admin'
-  ) {
-    useStore.setState({ user: { ...user, role: 'admin' } });
-  }
-}, 0);
+  // ── App Settings ──────────────────────────────────────────────────
+  updateAppSettings: (partial) => {
+    let updated: AppSettings | null = null;
+    set((state) => {
+      const appSettings = { ...state.appSettings, ...partial };
+      updated = appSettings;
+      return { appSettings };
+    });
+    if (updated) saveAppSettings(updated);
+  },
+}));
