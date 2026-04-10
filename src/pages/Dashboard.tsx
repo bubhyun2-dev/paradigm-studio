@@ -55,6 +55,7 @@ export default function Dashboard() {
   const products = useStore((s) => s.products);
   const dealers = useStore((s) => s.dealers);
   const appSettings = useStore((s) => s.appSettings);
+  const user = useStore((s) => s.user);
   const addProject = useStore((s) => s.addProject);
   const duplicateProject = useStore((s) => s.duplicateProject);
   const deleteProject = useStore((s) => s.deleteProject);
@@ -145,7 +146,15 @@ export default function Dashboard() {
     blank.hospitalProfile.contactTitle = '';
     blank.hospitalProfile.contactPhone = '';
     blank.hospitalProfile.contactEmail = '';
-    blank.salesProfile.dealerName = '';
+    // 대리점 로그인 시 dealerId/dealerName 자동 설정
+    if (user?.dealerId) {
+      const myDealer = dealers.find((d) => d.id === user.dealerId);
+      blank.salesProfile.dealerId = myDealer?.id ?? '';
+      blank.salesProfile.dealerName = myDealer?.name ?? '';
+    } else {
+      blank.salesProfile.dealerId = '';
+      blank.salesProfile.dealerName = '';
+    }
     blank.salesProfile.salesRepName = '';
     blank.salesProfile.memo = '';
     blank.status = 'draft';

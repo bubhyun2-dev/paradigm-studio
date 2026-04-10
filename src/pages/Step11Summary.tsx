@@ -46,6 +46,16 @@ export default function Step11Summary() {
   const updateProject = useStore((s) => s.updateProject);
   const products = useStore((s) => s.products);
   const dealers = useStore((s) => s.dealers);
+  const user = useStore((s) => s.user);
+
+  // 현재 프로젝트의 대리점 찾기 (dealerId 없으면 로그인 사용자의 대리점으로 fallback)
+  const currentDealer = useMemo(() => {
+    if (!project) return null;
+    const byProject = dealers.find((d) => d.id === project.salesProfile.dealerId);
+    if (byProject) return byProject;
+    if (user?.dealerId) return dealers.find((d) => d.id === user.dealerId) ?? null;
+    return null;
+  }, [dealers, project, user]);
 
   const [newAsset, setNewAsset] = useState<Partial<AssetLink>>({
     title: '', url: '', assetCategory: '설치전 사진', isSharedAsset: false, description: ''
@@ -75,8 +85,7 @@ export default function Step11Summary() {
 
   // ─── 본사 전송 핸들러 ───────────────────────────────────
   const handleSendToHQ = () => {
-    const dealer = dealers.find(d => d.id === project.salesProfile.dealerId);
-    const driveFolderUrl = dealer?.driveFolderUrl;
+    const driveFolderUrl = currentDealer?.driveFolderUrl;
 
     // JSON 다운로드 (대리점명_병원명_날짜_시방서.json)
     exportForHeadquarters(project);
@@ -849,15 +858,12 @@ export default function Step11Summary() {
           <h3 className="section-title" style={{ color: '#166534', margin: 0, display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
             <Upload size={17} /> 본사 전송 (Google Drive)
           </h3>
-          {(() => {
-            const dealer = dealers.find(d => d.id === project.salesProfile.dealerId);
-            return dealer?.driveFolderUrl ? (
-              <a href={dealer.driveFolderUrl} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: '0.75rem', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '0.25rem', textDecoration: 'underline' }}>
-                <FolderOpen size={13} /> 드라이브 폴더 열기
-              </a>
-            ) : null;
-          })()}
+          {currentDealer?.driveFolderUrl ? (
+            <a href={currentDealer.driveFolderUrl} target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: '0.75rem', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '0.25rem', textDecoration: 'underline' }}>
+              <FolderOpen size={13} /> 드라이브 폴더 열기
+            </a>
+          ) : null}
         </div>
 
         <p style={{ fontSize: '0.8125rem', color: '#15803d', marginBottom: '1rem', lineHeight: 1.6 }}>
@@ -900,19 +906,18 @@ export default function Step11Summary() {
 
         {/* 대리점 드라이브 폴더 상태 표시 */}
         {(() => {
-          const dealer = dealers.find(d => d.id === project.salesProfile.dealerId);
-          const hasDrive = !!dealer?.driveFolderUrl;
+          const hasDrive = !!currentDealer?.driveFolderUrl;
           return (
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', fontSize: '0.8125rem' }}>
               <FolderOpen size={14} style={{ color: hasDrive ? '#16a34a' : '#94a3b8' }} />
               <span style={{ color: '#64748b' }}>대리점 드라이브 폴더:</span>
               {hasDrive ? (
-                <a href={dealer!.driveFolderUrl} target="_blank" rel="noopener noreferrer"
+                <a href={currentDealer!.driveFolderUrl} target="_blank" rel="noopener noreferrer"
                   style={{ color: '#2563eb', textDecoration: 'underline', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                   연결됨 <ExternalLink size={11} />
                 </a>
               ) : (
-                <span style={{ color: '#ef4444' }}>미설정 (Step 00에서 관리자가 등록)</span>
+                <span style={{ color: '#ef4444' }}>미설정 (관리자에게 드라이브 폴더 URL 등록 요청)</span>
               )}
             </div>
           );
