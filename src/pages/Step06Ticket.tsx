@@ -209,25 +209,14 @@ export default function Step06Ticket() {
               <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>전역 설정</h3>
             </div>
             <div className="form-grid">
-              {/* 최상단 독립 문구 (1번째 줄) — 병원정보와 무관 */}
+              {/* 병원명/채혈실명 표시 문구 (최하단) */}
               <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="label">최상단 문구 (1번째 줄 — 병원정보와 무관한 독립 문구)</label>
-                <input
-                  className="input"
-                  value={ts.topLineText || ''}
-                  onChange={(e) => updateGlobal('topLineText', e.target.value)}
-                  placeholder="예: 대기 안내, 채혈실 대기표 등"
-                />
-              </div>
-
-              {/* 병원명/채혈실명 표시 문구 (8번째 줄용) — 직접 입력, 자동 연동 없음 */}
-              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
-                <label className="label">병원명/채혈실명 표시 문구 (8번째 줄 — 직접 입력, 병원정보 자동 연동 없음)</label>
+                <label className="label">병원명 채혈실명 기타 표시문구 (최하단 문구)</label>
                 <input
                   className="input"
                   value={ts.hospitalProfileName || ''}
                   onChange={(e) => updateGlobal('hospitalProfileName', e.target.value)}
-                  placeholder="예: 샘플대학교병원 채혈실"
+                  placeholder="예: 샘플대학교병원 채혈실, 감사합니다"
                 />
               </div>
 

@@ -202,11 +202,22 @@ export interface WorkflowSettings {
   exceptionMemo?: string;
 }
 
+export interface DidRightCard {
+  title: string;
+  description: string;
+  imageUrl: string;
+}
+
 export interface DidSettings {
   callingMethod: 'did_voice' | 'did_only';
   maskName: boolean;
   deskCount: number;
   layoutMode: 'standard' | 'split';
+  showClock: boolean;
+  showWaitingCount: boolean;
+  matrixMessage: string;
+  rightCards: DidRightCard[];
+  // legacy
   rightPanelText?: string;
   rightPanelImageUrl?: string;
 }
@@ -264,6 +275,7 @@ export interface ComponentItem {
 export interface TubeSlot {
   slot: number;
   tubeType: string;
+  manufacturer?: string;
 }
 
 export interface ContactRow {

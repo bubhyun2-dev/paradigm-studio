@@ -434,8 +434,13 @@ export function createSeedMasterTemplate(): MasterTemplate {
       maskName: true,
       deskCount: 6,
       layoutMode: 'standard',
-      rightPanelText: '채혈 후 5분간 지혈해주세요.',
-      rightPanelImageUrl: '',
+      showClock: true,
+      showWaitingCount: true,
+      matrixMessage: '',
+      rightCards: [
+        { title: '채혈 후 지혈 방법', description: '지혈 부위를 5분 이상\n꾹 눌러서 지혈해주세요.', imageUrl: '' },
+        { title: '소변검체 제출 방법', description: '채혈실 안에 있는 검사용\n화장실에서 소변을 받은 후에\n노란색 창문을 열고 소변컵을 넣어주세요.', imageUrl: '' },
+      ],
     },
     ticketSettings: {
       useReceptionDesk: true,

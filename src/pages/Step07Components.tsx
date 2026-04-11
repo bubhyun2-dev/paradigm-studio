@@ -125,8 +125,8 @@ export default function Step07Components() {
     setComponents((prev) => prev.map((c) => (c.id === id ? { ...c, [field]: value } : c)));
   };
 
-  const updateTubeSlot = (slot: number, tubeType: string) => {
-    setTubeSlots((prev) => prev.map((t) => (t.slot === slot ? { ...t, tubeType } : t)));
+  const updateTubeSlot = (slot: number, field: 'tubeType' | 'manufacturer', value: string) => {
+    setTubeSlots((prev) => prev.map((t) => (t.slot === slot ? { ...t, [field]: value } : t)));
   };
 
   const addCustomTube = () => {
@@ -470,7 +470,7 @@ export default function Step07Components() {
                   <select
                     className="input"
                     value={ts.tubeType}
-                    onChange={(e) => updateTubeSlot(ts.slot, e.target.value)}
+                    onChange={(e) => updateTubeSlot(ts.slot, 'tubeType', e.target.value)}
                     style={{ fontSize: '0.8125rem', textAlign: 'center', paddingRight: '1.5rem' }}
                   >
                     <option value="">미지정</option>
@@ -479,6 +479,13 @@ export default function Step07Components() {
                     ))}
                   </select>
                 </div>
+                <input
+                  className="input"
+                  value={ts.manufacturer || ''}
+                  onChange={(e) => updateTubeSlot(ts.slot, 'manufacturer', e.target.value)}
+                  placeholder="제조사"
+                  style={{ marginTop: '0.375rem', fontSize: '0.75rem', textAlign: 'center' }}
+                />
               </div>
             );
           })}
